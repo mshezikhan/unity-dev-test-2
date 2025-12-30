@@ -1,1 +1,3 @@
-# UnityDeveloperTest 2
+Controls:
+
+Marker Movement: W A S D
