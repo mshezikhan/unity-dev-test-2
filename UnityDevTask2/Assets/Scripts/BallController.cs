@@ -1,5 +1,6 @@
 using Unity.VisualScripting;
 using UnityEngine;
+using static GameManager;
 
 public class BallController : MonoBehaviour
 {
@@ -130,7 +131,14 @@ public class BallController : MonoBehaviour
             rb.AddForce(Vector3.up * bounceForce, ForceMode.Impulse); // not depends on swing/spin power
 
             if (mode == GameManager.BowlingMode.Spin)
-                ApplySpinAtBounce();
+            {
+                ApplySpinAtBounce(true);
+            }
+            else
+            {
+                ApplySpinAtBounce(false);
+            }
+                
         }
 
         // Reset everything after ball delivered or hit on ground
@@ -140,8 +148,10 @@ public class BallController : MonoBehaviour
         }
     }
 
-    void ApplySpinAtBounce()
+    void ApplySpinAtBounce(bool spin)
     {
+        if (!spin) { sideMultiplier = sideMultiplier * -1; }
+
         Vector3 velocity = rb.velocity;
 
         Vector3 horizontal = new Vector3(velocity.x, 0f, velocity.z);
