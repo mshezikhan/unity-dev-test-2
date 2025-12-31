@@ -150,12 +150,12 @@ public class BallController : MonoBehaviour
 
     void ApplySpinAtBounce(bool spin)
     {
-        if (!spin) { sideMultiplier = sideMultiplier * -1; }
+        int turnDir = spin ? sideMultiplier : -sideMultiplier;
 
         Vector3 velocity = rb.velocity;
 
         Vector3 horizontal = new Vector3(velocity.x, 0f, velocity.z);
-        float angle = spinTurnAngle * power * sideMultiplier;
+        float angle = spinTurnAngle * power * turnDir;
 
         Vector3 newDir = Quaternion.AngleAxis(angle, Vector3.up) * horizontal.normalized;
         rb.velocity = newDir * horizontal.magnitude;
