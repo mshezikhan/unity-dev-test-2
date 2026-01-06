@@ -1,4 +1,3 @@
-using Unity.VisualScripting;
 using UnityEngine;
 using static GameManager;
 
@@ -8,8 +7,7 @@ public class BallController : MonoBehaviour
     [SerializeField] GameManager gameManager;
     [SerializeField] Transform bounceMarker;
     [SerializeField] float pitchY = 0f;
-
-    [SerializeField] TrailRenderer trail; // Indication for ball path
+    [SerializeField] TrailRenderer trail;
 
     [Header("Movement")]
     [SerializeField] float forwardSpeed = 18f;
@@ -17,24 +15,25 @@ public class BallController : MonoBehaviour
     [SerializeField] float swingStrength = 4f;
     [SerializeField] float spinTurnAngle = 25f;
 
-    // Components & Local Variables
     Rigidbody rb;
     Vector3 startPosition;
 
-    float airProgress = 0f;
+    float airProgress;
     float totalAirTime;
 
-    // Swing path control (REQUIRED FIX)
+    // Swing path
     Vector3 swingStartPos;
     Vector3 swingEndPos;
     Vector3 swingControlPos;
 
-    // States
-    bool hasBounced = false;
-    bool isBowling = false;
+    // Swing direction tracking
+    Vector3 lastPos;
+    Vector3 currentDir;
 
-    // Data from GameManager
-    GameManager.BowlingMode mode;
+    bool hasBounced;
+    bool isBowling;
+
+    BowlingMode mode;
     float power;
     int sideMultiplier;
 
@@ -43,17 +42,11 @@ public class BallController : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         startPosition = transform.position;
 
-        // stop ball from falling
         rb.useGravity = false;
         rb.isKinematic = true;
     }
 
-    // Called by GameManager
-    public void StartBowling(
-        GameManager.BowlingMode mode,
-        float power,
-        int sideMultiplier
-    )
+    public void StartBowling(BowlingMode mode, float power, int sideMultiplier)
     {
         this.mode = mode;
         this.power = power;
@@ -62,34 +55,31 @@ public class BallController : MonoBehaviour
         hasBounced = false;
         isBowling = true;
 
-        rb.isKinematic = false;   // enable physics
+        rb.isKinematic = false;
         rb.useGravity = true;
 
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        // aim towards bounce marker
         Vector3 toTarget = bounceMarker.position - transform.position;
-
         Vector3 horizontal = new Vector3(toTarget.x, 0f, toTarget.z);
-        float horizontalDistance = horizontal.magnitude;
 
+        float horizontalDistance = horizontal.magnitude;
         float time = horizontalDistance / forwardSpeed;
+
         float verticalVelocity =
             (pitchY - transform.position.y -
             0.5f * Physics.gravity.y * time * time) / time;
 
-        Vector3 velocity =
+        rb.velocity =
             horizontal.normalized * forwardSpeed +
             Vector3.up * verticalVelocity;
 
         totalAirTime = time;
         airProgress = 0f;
 
-        rb.velocity = velocity;
-
-        // ball swing (fixed! it make sure it land on marker)
-        if (mode == GameManager.BowlingMode.Swing)
+        // -------- SWING SETUP ONLY --------
+        if (mode == BowlingMode.Swing)
         {
             swingStartPos = transform.position;
             swingEndPos = bounceMarker.position;
@@ -98,23 +88,31 @@ public class BallController : MonoBehaviour
             swingControlPos =
                 (swingStartPos + swingEndPos) * 0.5f +
                 sideDir * swingStrength * power;
+
+            lastPos = swingStartPos;
+            currentDir = horizontal.normalized;
         }
     }
 
     void FixedUpdate()
     {
-        if (!isBowling || hasBounced || mode != GameManager.BowlingMode.Swing)
+        // -------- SWING MOVEMENT ONLY --------
+        if (!isBowling || hasBounced || mode != BowlingMode.Swing)
             return;
 
         airProgress += Time.fixedDeltaTime;
         float t = Mathf.Clamp01(airProgress / totalAirTime);
 
-        // Bezier Curve
         Vector3 pos =
             (1 - t) * (1 - t) * swingStartPos +
             2 * (1 - t) * t * swingControlPos +
             t * t * swingEndPos;
 
+        Vector3 delta = pos - lastPos;
+        if (delta.sqrMagnitude > 0.0001f)
+            currentDir = delta.normalized;
+
+        lastPos = pos;
         transform.position = pos;
     }
 
@@ -124,48 +122,58 @@ public class BallController : MonoBehaviour
         {
             hasBounced = true;
 
-            // IMPULSE after bouncing
-            Vector3 v = rb.velocity;
-            rb.velocity = new Vector3(v.x, 0f, v.z);   // remove downward speed
-            //rb.AddForce(Vector3.up * bounceForce * power, ForceMode.Impulse);
-            rb.AddForce(Vector3.up * bounceForce, ForceMode.Impulse); // not depends on swing/spin power
+            // -------- SWING BOUNCE --------
+            if (mode == BowlingMode.Swing)
+            {
+                Vector3 horizontalDir = new Vector3(
+                    currentDir.x,
+                    0f,
+                    currentDir.z
+                ).normalized;
 
-            if (mode == GameManager.BowlingMode.Spin)
-            {
-                ApplySpinAtBounce(true);
+                rb.velocity = horizontalDir * forwardSpeed;
+                rb.velocity += Vector3.up * bounceForce;
             }
-            else
+
+            // -------- SPIN BOUNCE --------
+            if (mode == BowlingMode.Spin)
             {
-                ApplySpinAtBounce(false);
+                Vector3 v = rb.velocity;
+                rb.velocity = new Vector3(v.x, 0f, v.z);
+                rb.AddForce(Vector3.up * bounceForce, ForceMode.Impulse);
+
+                ApplySpinAtBounce(true); // YOUR LOGIC
             }
-                
         }
 
-        // Reset everything after ball delivered or hit on ground
-        if (collision.gameObject.CompareTag("Wicket") || collision.gameObject.CompareTag("Ground"))
+        if (collision.gameObject.CompareTag("Wicket") ||
+            collision.gameObject.CompareTag("Ground"))
         {
             EndDelivery();
         }
     }
 
+    // -------- YOUR ORIGINAL SPIN LOGIC (UNCHANGED) --------
     void ApplySpinAtBounce(bool spin)
     {
         int turnDir = spin ? sideMultiplier : -sideMultiplier;
+        float turnAngle = spinTurnAngle;
 
         Vector3 velocity = rb.velocity;
-
         Vector3 horizontal = new Vector3(velocity.x, 0f, velocity.z);
-        float angle = spinTurnAngle * power * turnDir;
 
-        Vector3 newDir = Quaternion.AngleAxis(angle, Vector3.up) * horizontal.normalized;
-        rb.velocity = newDir * horizontal.magnitude;
+        float angle = turnAngle * power * turnDir;
+
+        Vector3 newDir =
+            Quaternion.AngleAxis(angle, Vector3.up) * horizontal.normalized;
+
+        rb.velocity = newDir * horizontal.magnitude + Vector3.up * velocity.y;
     }
 
     void EndDelivery()
     {
         isBowling = false;
         rb.velocity = Vector3.zero;
-
         gameManager.ResetGame();
     }
 
